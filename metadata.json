@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Fee Finder - Travel B2B",
+  "description": "An SPA to calculate and display applicable fees for travel agencies based on rules loaded from a CSV file in FEE v3 format. It includes a fee calculator, a rule catalog, and an embedded test runner for validation.",
+  "requestFramePermissions": []
+}
