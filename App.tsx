@@ -7,7 +7,27 @@ import { AIRLINES_WITH_TRIP_KIND, TEST_CASES, DEFAULT_RULE, AGENCY_GROUPS } from
 import { exportToCsv, exportToJson } from './utils/export';
 import { Icon } from './components/Icon';
 
-const Header: React.FC<{ onFileLoaded: (rules: Rule[]) => void; setIsLoading: (loading: boolean) => void; isAdmin: boolean; }> = ({ onFileLoaded, setIsLoading, isAdmin }) => {
+const Notification: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void; }> = ({ message, type, onClose }) => {
+    const baseClasses = 'fixed top-5 right-5 z-50 p-4 rounded-md shadow-lg text-white flex items-center gap-4';
+    const typeClasses = type === 'success' ? 'bg-green-600' : 'bg-red-600';
+
+    return (
+        <div className={`${baseClasses} ${typeClasses}`}>
+            <span>{message}</span>
+            <button onClick={onClose} className="p-1 rounded-full hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+    );
+};
+
+const Header: React.FC<{ 
+    onFileLoaded: (rules: Rule[]) => void;
+    onLoadError: (message: string) => void;
+    setIsLoading: (loading: boolean) => void;
+    isAdmin: boolean;
+    onSetIsAdmin: (isAdmin: boolean) => void;
+}> = ({ onFileLoaded, onLoadError, setIsLoading, isAdmin, onSetIsAdmin }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -19,7 +39,7 @@ const Header: React.FC<{ onFileLoaded: (rules: Rule[]) => void; setIsLoading: (l
             const rules = await parseRulesFile(file);
             onFileLoaded(rules);
         } catch (error) {
-            alert(`Error al procesar el archivo: ${error instanceof Error ? error.message : String(error)}`);
+            onLoadError(`Error al procesar el archivo: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             setIsLoading(false);
             if(event.target) event.target.value = ''; // Reset file input
@@ -37,15 +57,29 @@ const Header: React.FC<{ onFileLoaded: (rules: Rule[]) => void; setIsLoading: (l
                     <h1 className="text-3xl font-bold leading-tight text-slate-900">Fee Finder</h1>
                     <p className="text-sm text-slate-500">Calculadora de fees para agencias de viaje B2B</p>
                 </div>
-                {isAdmin && (
-                    <div>
-                         <input id="file-upload" type="file" className="hidden" accept=".csv, .xlsx, .json" onChange={handleFileChange} ref={fileInputRef} />
-                         <button onClick={handleButtonClick} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            <Icon name="upload" className="w-5 h-5 mr-2" />
-                            Cargar Reglas
-                         </button>
+                <div className="flex items-center gap-4">
+                     <div>
+                        <label htmlFor="view-selector" className="block text-sm font-medium text-slate-700 sr-only">Vista</label>
+                        <select 
+                            id="view-selector"
+                            value={isAdmin ? 'admin' : 'user'} 
+                            onChange={(e) => onSetIsAdmin(e.target.value === 'admin')} 
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-white"
+                        >
+                            <option value="user">Usuario</option>
+                            <option value="admin">Administrador</option>
+                        </select>
                     </div>
-                )}
+                    {isAdmin && (
+                        <div>
+                             <input id="file-upload" type="file" className="hidden" accept=".csv, .xlsx, .json" onChange={handleFileChange} ref={fileInputRef} />
+                             <button onClick={handleButtonClick} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <Icon name="upload" className="w-5 h-5 mr-2" />
+                                Cargar Reglas
+                             </button>
+                        </div>
+                    )}
+                </div>
             </div>
         </header>
     );
@@ -343,7 +377,7 @@ const CollapsibleSection: React.FC<{ title: React.ReactNode, children: React.Rea
                 onClick={() => setIsOpen(!isOpen)}
                 aria-expanded={isOpen}
             >
-                <h2 className="text-xl font-semibold">{title}</h2>
+                <div className="flex items-center">{title}</div>
                 <Icon name="chevron-down" className={`w-5 h-5 text-slate-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
@@ -371,6 +405,15 @@ export default function App() {
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
     const [calculationResult, setCalculationResult] = useState<CalculationResult | null>(null);
     const [showTraceModal, setShowTraceModal] = useState(false);
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+    const [rulesSource, setRulesSource] = useState<'local' | 'file' | null>(null);
+
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
 
     useEffect(() => {
       // Check for admin mode
@@ -381,7 +424,11 @@ export default function App() {
       try {
         const storedRules = localStorage.getItem('fee_finder_rules');
         if (storedRules) {
-          setRules(JSON.parse(storedRules));
+          const parsedRules = JSON.parse(storedRules);
+          if(parsedRules.length > 0) {
+            setRules(parsedRules);
+            setRulesSource('local');
+          }
         }
       } catch (error) {
         console.error("Failed to load rules from localStorage", error);
@@ -391,13 +438,18 @@ export default function App() {
 
     const handleFileLoaded = (loadedRules: Rule[]) => {
         setRules(loadedRules);
+        setRulesSource('file');
         try {
             localStorage.setItem('fee_finder_rules', JSON.stringify(loadedRules));
-            alert(`${loadedRules.length} reglas cargadas y guardadas localmente.`);
+            setNotification({ message: `${loadedRules.length} reglas cargadas y guardadas localmente.`, type: 'success' });
         } catch (error) {
             console.error("Failed to save rules to localStorage", error);
-            alert("Error al guardar las reglas en el almacenamiento local.");
+            setNotification({ message: "Error al guardar las reglas en el almacenamiento local.", type: 'error' });
         }
+    };
+
+    const handleLoadError = (message: string) => {
+        setNotification({ message, type: 'error' });
     };
 
     const handleCalculate = useCallback(() => {
@@ -415,7 +467,7 @@ export default function App() {
         }
 
         if (rules.length === 0) {
-            alert("No hay reglas cargadas. Un administrador debe cargar un archivo de reglas usando el modo admin.");
+            setNotification({ message: "No hay reglas cargadas. Un administrador debe cargar un archivo.", type: 'error' });
             setCalculationResult({ bestRule: DEFAULT_RULE, matchingRules: [] });
             return;
         }
@@ -428,7 +480,14 @@ export default function App() {
 
     return (
         <>
-            <Header onFileLoaded={handleFileLoaded} setIsLoading={setIsLoading} isAdmin={isAdmin} />
+            {notification && <Notification message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
+            <Header 
+                onFileLoaded={handleFileLoaded} 
+                onLoadError={handleLoadError} 
+                setIsLoading={setIsLoading} 
+                isAdmin={isAdmin} 
+                onSetIsAdmin={setIsAdmin} 
+            />
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
                 {isLoading && (
                     <div className="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50">
@@ -452,11 +511,17 @@ export default function App() {
                     </div>
                     
                     <div className="space-y-6">
-                        <CollapsibleSection title={<>Catálogo de Reglas <span className="text-base font-normal text-slate-500">({rules.length})</span></>}>
+                        <CollapsibleSection title={
+                            <>
+                                <h2 className="text-xl font-semibold">Catálogo de Reglas</h2>
+                                <span className="ml-2 text-base font-normal text-slate-500">({rules.length})</span>
+                                {rules.length > 0 && rulesSource && <span className={`ml-3 inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${rulesSource === 'local' ? 'bg-sky-100 text-sky-800' : 'bg-green-100 text-green-800'}`}>{rulesSource === 'local' ? 'Guardado Localmente' : 'Recién Cargado'}</span>}
+                            </>
+                        }>
                            <RulesTable rules={rules} />
                         </CollapsibleSection>
 
-                        <CollapsibleSection title="Runner de Tests">
+                        <CollapsibleSection title={<h2 className="text-xl font-semibold">Runner de Tests</h2>}>
                            <TestRunner rules={rules} />
                         </CollapsibleSection>
                     </div>
